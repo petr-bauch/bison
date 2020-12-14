@@ -32,24 +32,25 @@
   #include "ast.hh"
 }
 
-%define api.value.type {Node *}
+%define api.value.type {Node}
 
 %code
 {
+  #include <cassert>
+  #include <cctype>
+  #include <cstdio>
+  #include <cstdlib>
+  #include <cstring>
 
-#include <cassert>
-#include <cctype>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
+  #if __cplusplus < 201103L
+  # define nullptr 0
+  #endif
 
-#if __cplusplus < 201103L
-# define nullptr 0
-#endif
+  static yy::parser::semantic_type
+  stmtMerge (const yy::parser::semantic_type& x0, const yy::parser::semantic_type& x1);
 
-  static YYSTYPE stmtMerge (YYSTYPE x0, YYSTYPE x1);
-
-  static int yylex (YYSTYPE *lvalp, YYLTYPE *llocp);
+  static int
+  yylex (yy::parser::semantic_type* val, yy::parser::location_type* loc);
 }
 
 %expect-rr 1
@@ -61,32 +62,29 @@
 %right '='
 %left '+'
 
-%destructor { $$->free (); } stmt expr decl declarator TYPENAME ID
-
 %%
 
 prog : %empty
-     | prog stmt   { std::cout << @2 << ": " << *$2 << '\n'; $2->free (); }
+     | prog stmt   { std::cout << @2 << ": " << $2 << '\n'; }
      ;
 
 stmt : expr ';'  %merge <stmtMerge>     { $$ = $1; }
      | decl      %merge <stmtMerge>
-     | error ';'        { $$ = new Nterm ("<error>"); }
+     | error ';'        { $$ = Nterm ("<error>"); }
      | '@'              { $$ = $1; YYACCEPT; }
      ;
 
 expr : ID
      | TYPENAME '(' expr ')'
-                        { $$ = new Nterm ("<cast>", $3, $1); }
-     | expr '+' expr    { $$ = new Nterm ("+", $1, $3); }
-     | expr '=' expr    { $$ = new Nterm ("=", $1, $3); }
+                        { $$ = Nterm ("<cast>", $3, $1); }
+     | expr '+' expr    { $$ = Nterm ("+", $1, $3); }
+     | expr '=' expr    { $$ = Nterm ("=", $1, $3); }
      ;
 
 decl : TYPENAME declarator ';'
-                        { $$ = new Nterm ("<declare>", $1, $2); }
+                        { $$ = Nterm ("<declare>", $1, $2); }
      | TYPENAME declarator '=' expr ';'
-                        { $$ = new Nterm ("<init-declare>", $1,
-                                          $2, $4); }
+                        { $$ = Nterm ("<init-declare>", $1, $2, $4); }
      ;
 
 declarator
@@ -96,21 +94,22 @@ declarator
 
 %%
 /* A C error reporting function.  */
-void yy::parser::error (const location_type& l, const std::string& m)
+void
+yy::parser::error (const location_type& l, const std::string& m)
 {
   std::cerr << l << ": " << m << '\n';
 }
 
-int yylex (YYSTYPE *lvalp, YYLTYPE *llocp)
+static int
+yylex (yy::parser::semantic_type* lvalp, yy::parser::location_type* llocp)
 {
   static int lineNum = 1;
   static int colNum = 0;
 
   while (1)
     {
-      int c;
       assert (!feof (stdin));
-      c = getchar ();
+      int c = getchar ();
       switch (c)
         {
         case EOF:
@@ -127,9 +126,9 @@ int yylex (YYSTYPE *lvalp, YYLTYPE *llocp)
           break;
         default:
           {
-            int tok;
             llocp->begin.line = llocp->end.line = lineNum;
             llocp->begin.column = colNum;
+            int tok;
             if (isalpha (c))
               {
                 std::string form;
@@ -146,13 +145,13 @@ int yylex (YYSTYPE *lvalp, YYLTYPE *llocp)
                   = isupper (static_cast <unsigned char> (form[0]))
                   ? yy::parser::token::TYPENAME
                   : yy::parser::token::ID;
-                *lvalp = new Term (form);
+                *lvalp = Term (form);
               }
             else
               {
                 colNum += 1;
                 tok = c;
-                *lvalp = nullptr;
+                lvalp = nullptr;
               }
             llocp->end.column = colNum-1;
             return tok;
@@ -161,18 +160,18 @@ int yylex (YYSTYPE *lvalp, YYLTYPE *llocp)
     }
 }
 
-static YYSTYPE
-stmtMerge (YYSTYPE x0, YYSTYPE x1)
+static yy::parser::semantic_type
+stmtMerge (const yy::parser::semantic_type& x0, const yy::parser::semantic_type& x1)
 {
-  return new Nterm ("<OR>", x0, x1);
+  return Nterm ("<OR>", x0, x1);
 }
 
 int
 main (int argc, char **argv)
 {
+  yy::parser parse;
   // Enable parse traces on option -p.
   if (1 < argc && strcmp (argv[1], "-p") == 0)
-    yydebug = 1;
-  yy::parser parser;
-  return !!parser.parse ();
+    parse.set_debug_level (1);
+  return parse ();
 }

@@ -779,16 +779,15 @@ public:
   {}
 
   /// Build with a semantic value.
-  glr_state(state_num lrState, size_t posn, YYSTYPE sval]b4_locations_if([[, YYLTYPE loc]])[)
-    : yyresolved(true)
-    , yylrState(lrState)
-    , yyposn(posn)
-    , yypred(0)]b4_locations_if([[
-    , yyloc(loc)]])[]b4_parse_assert_if([[
+  glr_state (state_num lrState, size_t posn, YYSTYPE sval]b4_locations_if([[, YYLTYPE loc]])[)
+    : yyresolved (true)
+    , yylrState (lrState)
+    , yyposn (posn)
+    , yypred (0)
+    , yysval (sval)]b4_locations_if([[
+    , yyloc (loc)]])[]b4_parse_assert_if([[
     , magic_ (MAGIC)]])[
-  {
-    semanticVal() = sval;
-  }
+  {}
 
   /// Build with a semantic option.
   glr_state(state_num lrState, size_t posn)
@@ -800,17 +799,42 @@ public:
     , magic_ (MAGIC)]])[
   {}
 
+  glr_state (const glr_state& other)]b4_parse_assert_if([[
+    : magic_ (MAGIC)]])[
+  {
+    // FIXME: Do it right.
+    copyFrom (other);
+  }
+
+  ~glr_state ()
+  {]b4_parse_assert_if([[
+    check_ ();
+    magic_ = 0;]])[
+    // FIXME: destroy the value.
+  }
+
+  glr_state& operator= (const glr_state& other)
+  {
+    copyFrom (other);
+    return *this;
+  }
+
   void copyFrom (const glr_state& other)
   {]b4_parse_assert_if([[
     check_ ();
     other.check_ ();]])[
-    *this = other;
+    if (!yyresolved && other.yyresolved)
+      new (&yysval) YYSTYPE;
+    yyresolved = other.yyresolved;
+    yylrState = other.yylrState;
+    yyposn = other.yyposn;
     setPred(other.pred());
     if (other.yyresolved) {
       semanticVal() = other.semanticVal();
     } else {
       setFirstVal(other.firstVal());
-    }
+    }]b4_locations_if([[
+    yyloc = other.yyloc;]])[
   }
 
   /** Type tag for the semantic value.  If true, yysval applies, otherwise
