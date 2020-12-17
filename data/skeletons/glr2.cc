@@ -767,12 +767,20 @@ static inline int
 yyrhsLength (rule_num yyrule);
 
 
+template <typename T>
+const char*
+as_pointer_ (const T* t)
+{
+  return reinterpret_cast<const char *> (t);
+}
+
 template <typename T, typename U>
 ptrdiff_t
 ptr_difference (const T* t, const U* u)
 {
   return reinterpret_cast<const char *> (t) - reinterpret_cast<const char *> (u);
 }
+
 
 template <typename T>
 const glr_stack_item*
@@ -837,6 +845,7 @@ public:
   void copyFrom (const glr_state& other)
   {]b4_parse_assert_if([[
     other.check_ ();]])[
+    YY_DEBUG_STREAM << "copyFrom(" << &other << '\n';
     if (!yyresolved && other.yyresolved)
       new (&yysval) YYSTYPE;
     yyresolved = other.yyresolved;
@@ -929,6 +938,11 @@ public:
   void check_ () const
   {
     YY_IGNORE_NULL_DEREFERENCE_BEGIN
+    YY_DEBUG_STREAM << "state: "
+                    << this << "->magic_ = " << this->magic_ << " ?= " << MAGIC
+                    << ", pred: " << YY_CAST(const void*, yypred ? (as_pointer_ (this) - yypred) : nullptr)
+                    << '\n';
+    std::cerr << "this: " << this << '\n';
     YYASSERT (this->magic_ == MAGIC);
     YY_IGNORE_NULL_DEREFERENCE_END
   }
@@ -1208,6 +1222,7 @@ public:
     : is_state_ (state)]b4_parse_assert_if([[
     , magic_ (MAGIC)]])[
   {
+    YY_DEBUG_STREAM << "glr_stack_item.new: " << this << " is_state: " << is_state_ << '\n';
     if (is_state_)
       new (&raw_) glr_state;
     else
@@ -1217,7 +1232,9 @@ public:
   glr_stack_item (const glr_stack_item& other) YY_NOEXCEPT YY_NOTHROW
     : is_state_ (other.is_state_)]b4_parse_assert_if([[
     , magic_ (0xDEAD1ACC)]])[
-  {]b4_parse_assert_if([[
+  {
+    YY_DEBUG_STREAM << "glr_stack_item.new: " << this << " is_state: " << is_state_ << '\n';
+]b4_parse_assert_if([[
     other.check_ ();]])[
     std::memcpy (raw_, other.raw_, union_size);
   }
@@ -1232,7 +1249,9 @@ public:
   }
 
   ~glr_stack_item ()
-  {]b4_parse_assert_if([[
+  {
+    YY_DEBUG_STREAM << "glr_stack_item.dtor: " << this << " is_state: " << is_state_ << '\n';
+]b4_parse_assert_if([[
     check_ ();]])[
     if (is_state())
       getState().~glr_state();
@@ -1254,7 +1273,9 @@ public:
   }
 
   glr_state& getState ()
-  {]b4_parse_assert_if([[
+  {
+    YY_DEBUG_STREAM << "item::get_state(" << this << ")\n";
+    ]b4_parse_assert_if([[
     check_ ();]])[
     YYDASSERT (is_state ());
     void *yyp = raw_;
@@ -1262,7 +1283,8 @@ public:
   }
 
   const glr_state& getState () const
-  {]b4_parse_assert_if([[
+  {    YY_DEBUG_STREAM << "item::get_state(" << this << ") const\n";
+]b4_parse_assert_if([[
     check_ ();]])[
     YYDASSERT (is_state ());
     const void *yyp = raw_;
@@ -1311,6 +1333,9 @@ public:
   // Check invariants.
   void check_ () const
   {
+    YY_DEBUG_STREAM << "stack_item: "
+                    << this << "->magic_ = " << this->magic_ << " ?= " << MAGIC
+                    << " is_state: " << this->is_state_ << '\n';
     YYASSERT (this->magic_ == MAGIC);
     YYASSERT (this->is_state_ == false || this->is_state_ == true);
   }
@@ -1345,6 +1370,9 @@ glr_state* glr_state::pred ()
 {]b4_parse_assert_if([[
   check_ ();]])[
   YY_IGNORE_NULL_DEREFERENCE_BEGIN
+  YY_DEBUG_STREAM << "Pred(" << this << ", " << yypred << ")"
+                  << " => " << std::hex << as_pointer_ (this) - yypred
+                  << '\n';
   return yypred ? &item_at (this, yypred)->getState () : YY_NULLPTR;
   YY_IGNORE_NULL_DEREFERENCE_END
 }
@@ -1353,6 +1381,9 @@ const glr_state* glr_state::pred () const
 {]b4_parse_assert_if([[
   check_ ();]])[
   YY_IGNORE_NULL_DEREFERENCE_BEGIN
+  YY_DEBUG_STREAM << "Pred(" << this << ", " << yypred << ")"
+                  << " => " << std::hex << as_pointer_ (this) - yypred
+                  << '\n';
   return yypred ? &item_at (this, yypred)->getState () : YY_NULLPTR;
   YY_IGNORE_NULL_DEREFERENCE_END
 }
@@ -1361,6 +1392,9 @@ void glr_state::setPred (const glr_state* state)
 {]b4_parse_assert_if([[
   check_ ();]])[
   yypred = state ? ptr_difference (this, state) : 0;
+  YY_DEBUG_STREAM << "PTRDIFF_MAX: " << "0x" << std::hex << PTRDIFF_MAX << '\n';
+  YY_DEBUG_STREAM << "Pred(" << this << ", " << state << ")" << " := " << std::hex << yypred << "\n";
+  //YYASSERT(yypred < 10000);
 }
 
 semantic_option* glr_state::firstVal ()
@@ -1397,12 +1431,20 @@ std::ptrdiff_t semantic_option::indexIn (glr_stack_item* array)
 glr_state* semantic_option::state ()
 {
   YY_IGNORE_NULL_DEREFERENCE_BEGIN
+  if (yystate)
+    {
+    YY_DEBUG_STREAM << "option::state(" << this << " - " << yystate << ") => " << item_at (this, yystate) << '\n';
+    }
   return yystate ? &item_at (this, yystate)->getState() : YY_NULLPTR;
   YY_IGNORE_NULL_DEREFERENCE_END
 }
 
 const glr_state* semantic_option::state () const
 {
+  if (yystate)
+    {
+    YY_DEBUG_STREAM << "option::state const(" << this << " - " << yystate << ") => " << item_at(this, yystate) << '\n';
+    }
   return yystate ? &item_at (this, yystate)->getState() : YY_NULLPTR;
 }
 
