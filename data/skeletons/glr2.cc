@@ -767,6 +767,21 @@ static inline int
 yyrhsLength (rule_num yyrule);
 
 
+template <typename T, typename U>
+ptrdiff_t
+ptr_difference (const T* t, const U* u)
+{
+  return reinterpret_cast<const char *> (t) - reinterpret_cast<const char *> (u);
+}
+
+template <typename T>
+const glr_stack_item*
+item_at (const T* base, ptrdiff_t diff);
+
+template <typename T>
+glr_stack_item*
+item_at (T* base, ptrdiff_t diff);
+
 class glr_state
 {
 public:
@@ -889,26 +904,10 @@ public:
   glr_stack_item* asItem()
   {]b4_parse_assert_if([[
     check_ ();]])[
-    return asItem(this);
+    return reinterpret_cast<glr_stack_item*>(this);
   }
 
  private:
-  template <typename T>
-  static const glr_stack_item* asItem(const T* state) {
-    return reinterpret_cast<const glr_stack_item*>(state);
-  }
-  template <typename T>
-  static glr_stack_item* asItem(T* state) {
-    return reinterpret_cast<glr_stack_item*>(state);
-  }
-  static const char *as_pointer_ (const glr_state *state)
-  {
-    return reinterpret_cast<const char *>(state);
-  }
-  static char *as_pointer_ (glr_state *state)
-  {
-    return reinterpret_cast<char *>(state);
-  }
   /** Preceding state in this stack */
   std::ptrdiff_t yypred;
   union {
@@ -925,7 +924,7 @@ public:
   YYLTYPE yyloc;]])[
 
 ]b4_parse_assert_if([[
-private:
+public:
   // Check invariants.
   void check_ () const
   {
@@ -1187,14 +1186,6 @@ class semantic_option {
   rule_num yyrule;
 
  private:
-  template <typename T>
-  static const glr_stack_item* asItem(const T* state) {
-    return reinterpret_cast<const glr_stack_item*>(state);
-  }
-  template <typename T>
-  static glr_stack_item* asItem(T* state) {
-    return reinterpret_cast<glr_stack_item*>(state);
-  }
   /** The last RHS state in the list of states to be reduced.  */
   std::ptrdiff_t yystate;
   /** Next sibling in chain of options.  To facilitate merging,
@@ -1208,7 +1199,7 @@ class semantic_option {
 };
 
 /** Type of the items in the GLR stack.
- *  It can be either a glr_state or a semantic_union. The is_state_ field
+ *  It can be either a glr_state or a semantic_option. The is_state_ field
  *  indicates which item of the union is valid.  */
 class glr_stack_item
 {
@@ -1251,7 +1242,8 @@ public:
 
   void setState (const glr_state &state)
   {]b4_parse_assert_if([[
-    check_ ();]])[
+    check_ ();
+    state.check_ ();]])[
     // FIXME: What about the previous content?  Shouldn't it be freed?
     // It might be useful to have an explicit "void" state when this item
     // is in unused state (in the list of free items), when parse.assert
@@ -1296,6 +1288,7 @@ public:
     check_ ();]])[
     return is_state_;
   }
+
  private:
   /// The possible contents of raw_. Since they have constructors, they cannot
   /// be directly included in the union.
@@ -1313,8 +1306,8 @@ public:
   };
   /** Type tag for the union. */
   bool is_state_;
-
 ]b4_parse_assert_if([[
+public:
   // Check invariants.
   void check_ () const
   {
@@ -1326,11 +1319,33 @@ public:
   const unsigned int magic_;]])[
 };
 
+template <typename T>
+const glr_stack_item*
+item_at (const T* base, ptrdiff_t diff)
+{
+  const glr_stack_item* res
+    = reinterpret_cast<const glr_stack_item*>(reinterpret_cast<const char *> (base) - diff);
+  res->check_ ();
+  return res;
+}
+
+template <typename T>
+glr_stack_item*
+item_at (T* base, ptrdiff_t diff)
+{
+  glr_stack_item* res
+    = reinterpret_cast<glr_stack_item*>(reinterpret_cast<char *> (base) - diff);
+  res->check_ ();
+  return res;
+}
+
+/* glr_state. */
+
 glr_state* glr_state::pred ()
 {]b4_parse_assert_if([[
   check_ ();]])[
   YY_IGNORE_NULL_DEREFERENCE_BEGIN
-  return yypred ? &asItem (as_pointer_ (this) - yypred)->getState () : YY_NULLPTR;
+  return yypred ? &item_at (this, yypred)->getState () : YY_NULLPTR;
   YY_IGNORE_NULL_DEREFERENCE_END
 }
 
@@ -1338,70 +1353,72 @@ const glr_state* glr_state::pred () const
 {]b4_parse_assert_if([[
   check_ ();]])[
   YY_IGNORE_NULL_DEREFERENCE_BEGIN
-  return yypred ? &asItem (as_pointer_ (this) - yypred)->getState () : YY_NULLPTR;
+  return yypred ? &item_at (this, yypred)->getState () : YY_NULLPTR;
   YY_IGNORE_NULL_DEREFERENCE_END
 }
 
 void glr_state::setPred (const glr_state* state)
 {]b4_parse_assert_if([[
   check_ ();]])[
-  yypred = state ? as_pointer_ (this) - as_pointer_ (state) : 0;
+  yypred = state ? ptr_difference (this, state) : 0;
 }
 
 semantic_option* glr_state::firstVal ()
 {]b4_parse_assert_if([[
   check_ ();]])[
-  return yyfirstVal ? &(asItem(this) - yyfirstVal)->getOption() : YY_NULLPTR;
+  return yyfirstVal ? &item_at (this, yyfirstVal)->getOption() : YY_NULLPTR;
 }
 
 const semantic_option* glr_state::firstVal () const
 {]b4_parse_assert_if([[
   check_ ();]])[
-  return yyfirstVal ? &(asItem(this) - yyfirstVal)->getOption() : YY_NULLPTR;
+  return yyfirstVal ? &item_at (this, yyfirstVal)->getOption() : YY_NULLPTR;
 }
 
 void glr_state::setFirstVal (const semantic_option* option)
 {]b4_parse_assert_if([[
   check_ ();]])[
-  yyfirstVal = option ? asItem(this) - asItem(option) : 0;
+  yyfirstVal = option ? ptr_difference (this, option) : 0;
 }
 
 std::ptrdiff_t glr_state::indexIn (glr_stack_item* array)
 {]b4_parse_assert_if([[
   check_ ();]])[
-  return asItem(this) - array;
+  return ptr_difference (this, array);
 }
+
+/* semantic_option. */
 
 std::ptrdiff_t semantic_option::indexIn (glr_stack_item* array)
 {
-  return asItem(this) - array;
+  return ptr_difference (this, array);
 }
 
 glr_state* semantic_option::state ()
 {
   YY_IGNORE_NULL_DEREFERENCE_BEGIN
-  return yystate ? &(asItem(this) - yystate)->getState() : YY_NULLPTR;
+  return yystate ? &item_at (this, yystate)->getState() : YY_NULLPTR;
   YY_IGNORE_NULL_DEREFERENCE_END
 }
 
 const glr_state* semantic_option::state () const
 {
-  return yystate ? &(asItem(this) - yystate)->getState() : YY_NULLPTR;
+  return yystate ? &item_at (this, yystate)->getState() : YY_NULLPTR;
 }
 
 void semantic_option::setState (const glr_state* s)
 {
-  yystate = s ? asItem(this) - asItem(s) : 0;
+  yystate = s ? ptr_difference (this, s) : 0;
 }
 
 semantic_option* semantic_option::next ()
 {
-  return yynext ? &(asItem(this) - yynext)->getOption() : YY_NULLPTR;
+  return yynext ? &item_at (this, yynext)->getOption() : YY_NULLPTR;
 }
 
 void semantic_option::setNext (const semantic_option* s)
 {
-  yynext = s ? asItem(this) - asItem(s) : 0;
+  yynext = s ? ptr_difference (this, s) : 0;
 }
 
 void glr_state::destroy (char const* yymsg, ]b4_namespace_ref[::]b4_parser_class[& yyparser]b4_user_formals[)
